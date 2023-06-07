@@ -1,3 +1,4 @@
+gunicorn
 Flask==2.2.5
 line-bot-sdk==2.4.2
 pip==23.1.2

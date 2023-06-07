@@ -4,5 +4,5 @@ pip==23.1.2
 pydub==0.25.1
 python-dotenv==0.21.1
 requests==2.28.2
-SpeechRecognition==3.10.0
+SpeechRecognition==3.9.0
 

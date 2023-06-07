@@ -1,0 +1,14 @@
+services:
+- type: web
+  name: linebot-voice-assistant
+  env: python
+  repo: https://github.com/shinyu0430/linebot-voice-assistant.git
+  plan: free
+  autoDeploy: false
+  buildCommand: pip install gunicorn -r requirements.txt
+  startCommand: gunicorn app:app
+  envVars:
+  - key: LINE_CHANNEL_ACCESS_TOKEN
+    sync: false
+  - key: LINE_CHANNEL_SECRET
+    sync: false

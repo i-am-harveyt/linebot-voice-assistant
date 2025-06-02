@@ -1,0 +1,42 @@
+{
+    "type": "bubble",
+    "hero": {
+      "type": "box",
+      "layout": "vertical",
+      "contents": [
+        {
+          "type": "text",
+          "text": "醫療諮詢回覆",
+          "align": "center",
+          "color": "#FFFFFF",
+          "weight": "bold",
+          "size": "xxs"
+        }
+      ],
+      "backgroundColor": "#77ea8c",
+      "paddingAll": "5px"
+    },
+    "body": {
+      "type": "box",
+      "layout": "horizontal",
+      "contents": [
+        {
+          "type": "image",
+          "url": "https://imgur.com/OkOzWzp.jpg",
+          "size": "xxs",
+          "align": "start",
+          "flex": 1
+        },
+        {
+          "type": "text",
+          "text": "{{message}}",
+          "wrap": true,
+          "flex": 4,
+          "weight": "bold",
+          "size": "sm",
+          "margin": "none"
+        }
+      ],
+      "alignItems": "flex-start"
+    }
+} 

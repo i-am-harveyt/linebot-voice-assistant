@@ -45,6 +45,7 @@ Create a `.env` file, fill in the secrets:
 LINE_CHANNEL_ACCESS_TOKEN=<your-token>
 LINE_CHANNEL_SECRET=<your-secret>
 OPENAI_API_KEY=<your-openai-api-key>
+GOOGLE_MAPS_API_KEY=<your-google-map-api-key>
 ```
 
 Run the program on local machine for testing:

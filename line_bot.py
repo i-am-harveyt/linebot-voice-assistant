@@ -15,8 +15,14 @@ from linebot.v3.messaging import (
     MessagingApiBlob,
     TextMessage,
 )
-from linebot.v3.webhooks import AudioMessageContent, MessageEvent, TextMessageContent
+from linebot.v3.webhooks import (
+    AudioMessageContent,
+    MessageEvent,
+    TextMessageContent,
+    LocationMessageContent,
+)
 from pydub import AudioSegment
+import requests
 import speech_recognition as sr
 
 
@@ -171,27 +177,102 @@ class Bot:
                     )
                 )
 
+        @self.handler.add(MessageEvent, message=LocationMessageContent)
+        def handle_location_message(event: MessageEvent):
+            def search_nearby_clinics(lat, lng, radius=2000, keyword="診所"):
+                url = "https://maps.googleapis.com/maps/api/place/nearbysearch/json"
+                params = {
+                    "location": f"{lat},{lng}",
+                    "radius": radius,
+                    "keyword": keyword,
+                    "type": "doctor",
+                    "language": "zh-TW",
+                    "key": os.getenv("GOOGLE_MAPS_API_KEY"),
+                }
+
+                response = requests.get(url, params=params)
+                data = response.json()
+
+                if data.get("status") != "OK":
+                    logging.warning(f"Google Places API error: {data.get('status')}")
+                    return []
+
+                results = []
+                for place in data.get("results", [])[:5]:  # 只取前 5 筆
+                    results.append(
+                        {
+                            "name": place.get("name"),
+                            "address": place.get("vicinity"),
+                            "lat": place["geometry"]["location"]["lat"],
+                            "lng": place["geometry"]["location"]["lng"],
+                        }
+                    )
+
+                return results
+
+            def format_clinic_results(clinics):
+                result_texts = []
+                for clinic in clinics:
+                    map_link = (
+                        f"https://maps.google.com/?q={clinic['lat']},{clinic['lng']}"
+                    )
+                    result_texts.append(
+                        f"🏥 {clinic['name']}\n📍 {clinic['address']}\n🔗 {map_link}"
+                    )
+                return "\n\n".join(result_texts)
+
+            latitude, longitude = event.message.latitude, event.message.longitude
+            logging.info(f"Received: {latitude}, {longitude}")
+
+            try:
+                clinics = search_nearby_clinics(latitude, longitude)
+
+                if not clinics:
+                    reply = "找不到附近的診所，建議您聯繫 1922 或前往大型醫院急診。"
+                else:
+                    reply = format_clinic_results(clinics)
+
+                with ApiClient(self.config) as api_client:
+                    line_bot_api = MessagingApi(api_client)
+                    line_bot_api.reply_message(
+                        ReplyMessageRequest(
+                            replyToken=event.reply_token,
+                            messages=[TextMessage(text=reply)],
+                            notificationDisabled=False,
+                        )
+                    )
+            except Exception as e:
+                logging.error(f"Error during clinic search: {e}")
+                with ApiClient(self.config) as api_client:
+                    line_bot_api = MessagingApi(api_client)
+                    line_bot_api.reply_message(
+                        ReplyMessageRequest(
+                            replyToken=event.reply_token,
+                            messages=[
+                                TextMessage(text="目前無法查詢附近診所，請稍後再試。")
+                            ],
+                            notificationDisabled=False,
+                        )
+                    )
+
         @self.app.route("/test-gpt", methods=["POST"])
         def test_gpt():
             """Test GPT response endpoint"""
             try:
                 data = request.get_json()
-                if not data or 'paragraph' not in data or 'question' not in data:
+                if not data or "paragraph" not in data or "question" not in data:
                     return {"error": "Please provide paragraph and question"}, 400
 
-                paragraph = data['paragraph']
-                question = data['question']
+                paragraph = data["paragraph"]
+                question = data["question"]
 
                 # Generate response using GPT
                 response = self.ai.generate_gpt_response(paragraph, question)
-                
-                return {
-                    "status": "success",
-                    "response": response
-                }
+
+                return {"status": "success", "response": response}
             except Exception as e:
                 logging.error(f"Error in GPT test: {e}")
-                return {"error": str(e)}, 500 
+                return {"error": str(e)}, 500
 
     def run(self):
         self.app.logger.setLevel("INFO")

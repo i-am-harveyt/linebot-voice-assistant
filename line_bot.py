@@ -1,5 +1,7 @@
 from ai import AI
+from utils.flex_message_converter import convert_to_flex_message
 
+import json
 import logging
 import os
 import tempfile
@@ -14,6 +16,8 @@ from linebot.v3.messaging import (
     ReplyMessageRequest,
     MessagingApiBlob,
     TextMessage,
+    FlexMessage,
+    FlexContainer,
 )
 from linebot.v3.webhooks import (
     AudioMessageContent,
@@ -81,10 +85,36 @@ class Bot:
                 gpt_response = self.ai.generate_gpt_response(paragraph, question)
                 logging.info(f"Generated GPT response: {gpt_response}")
 
-                # Send simple text response
-                with ApiClient(self.config) as api_client:
-                    line_bot_api = MessagingApi(api_client)
-                    try:
+                # Convert GPT response to Flex Message format
+                flex_message = convert_to_flex_message(gpt_response)
+                
+                if flex_message:
+                    # Send response using Flex Message
+                    with ApiClient(self.config) as api_client:
+                        line_bot_api = MessagingApi(api_client)
+                        try:
+                            response = line_bot_api.reply_message(
+                                ReplyMessageRequest(
+                                    replyToken=event.reply_token,
+                                    messages=[
+                                        FlexMessage(
+                                            alt_text=gpt_response,
+                                            contents=FlexContainer.from_json(json.dumps(flex_message))
+                                        )
+                                    ],
+                                    notificationDisabled=False,
+                                )
+                            )
+                            logging.info(f"Line API response: {response}")
+                        except Exception as api_error:
+                            logging.error(
+                                f"Error sending message to Line API: {str(api_error)}"
+                            )
+                            raise
+                else:
+                    # Fallback to text message if conversion fails
+                    with ApiClient(self.config) as api_client:
+                        line_bot_api = MessagingApi(api_client)
                         response = line_bot_api.reply_message(
                             ReplyMessageRequest(
                                 replyToken=event.reply_token,
@@ -92,12 +122,6 @@ class Bot:
                                 notificationDisabled=False,
                             )
                         )
-                        logging.info(f"Line API response: {response}")
-                    except Exception as api_error:
-                        logging.error(
-                            f"Error sending message to Line API: {str(api_error)}"
-                        )
-                        raise
 
             except Exception as e:
                 error_message = f"Error processing message: {str(e)}"
@@ -130,52 +154,105 @@ class Bot:
             if event.reply_token is None:
                 return
 
-            # 接收使用者語音訊息並存檔
-            with ApiClient(self.config) as api_client:
-                line_bot_blob_api = MessagingApiBlob(api_client)
-                audio_content = line_bot_blob_api.get_message_content(event.message.id)
-
-                # TODO: We might need to setup an auto-delete or sth
-                with tempfile.NamedTemporaryFile(
-                    dir="./audio", prefix="m4a-", delete=False
-                ) as tf:
-                    tf.write(audio_content)
-                    src = tf.name
-
-            # 轉檔
-            dst = f"{src}.wav"
-            sound = AudioSegment.from_file(src)
-            sound.export(dst, format="wav")
-
-            # 辨識
-            r = sr.Recognizer()
-            with sr.AudioFile(dst) as source:
-                audio = r.record(source)
             try:
-                text = r.recognize_google(audio, language="zh-Hant")
+                # 接收使用者語音訊息並存檔
+                with ApiClient(self.config) as api_client:
+                    line_bot_blob_api = MessagingApiBlob(api_client)
+                    audio_content = line_bot_blob_api.get_message_content(event.message.id)
+
+                    # TODO: We might need to setup an auto-delete or sth
+                    with tempfile.NamedTemporaryFile(
+                        dir="./audio", prefix="m4a-", delete=False
+                    ) as tf:
+                        tf.write(audio_content)
+                        src = tf.name
+
+                # 轉檔
+                dst = f"{src}.wav"
+                sound = AudioSegment.from_file(src)
+                sound.export(dst, format="wav")
+
+                # 辨識
+                r = sr.Recognizer()
+                with sr.AudioFile(dst) as source:
+                    audio = r.record(source)
+                try:
+                    text = r.recognize_google(audio, language="zh-Hant")
+                    logging.info(f"Transcribed text: {text}")
+                except Exception as e:
+                    logging.error(f"Error transcribing audio: {e}")
+                    raise
+
+                # 查詢 FAISS
+                context_chunks = self.ai.query_faiss(text)
+                paragraph = "\n\n".join(context_chunks)
+
+                # Generate response using GPT
+                gpt_response = self.ai.generate_gpt_response(paragraph, text)
+                logging.info(f"Generated GPT response: {gpt_response}")
+
+                # Convert GPT response to Flex Message format
+                flex_message = convert_to_flex_message(gpt_response)
+                
+                if flex_message:
+                    # Send response using Flex Message
+                    with ApiClient(self.config) as api_client:
+                        line_bot_api = MessagingApi(api_client)
+                        try:
+                            response = line_bot_api.reply_message(
+                                ReplyMessageRequest(
+                                    replyToken=event.reply_token,
+                                    messages=[
+                                        FlexMessage(
+                                            alt_text=gpt_response,
+                                            contents=FlexContainer.from_json(json.dumps(flex_message))
+                                        )
+                                    ],
+                                    notificationDisabled=False,
+                                )
+                            )
+                            logging.info(f"Line API response: {response}")
+                        except Exception as api_error:
+                            logging.error(
+                                f"Error sending message to Line API: {str(api_error)}"
+                            )
+                            raise
+                else:
+                    # Fallback to text message if conversion fails
+                    with ApiClient(self.config) as api_client:
+                        line_bot_api = MessagingApi(api_client)
+                        response = line_bot_api.reply_message(
+                            ReplyMessageRequest(
+                                replyToken=event.reply_token,
+                                messages=[TextMessage(text=gpt_response)],
+                                notificationDisabled=False,
+                            )
+                        )
+
             except Exception as e:
-                return e.__str__
+                error_message = f"Error processing audio message: {str(e)}"
+                logging.error(error_message)
 
-            # 回傳訊息給使用者 TODO: Load the template back, with some modification
-            # with open("template/sound_reply.json", "r") as f:
-            #     dt = json.load(f)
-            #     dt["body"]["contents"][1]["text"] = text
+                # Try to send error message to user
+                try:
+                    with ApiClient(self.config) as api_client:
+                        line_bot_api = MessagingApi(api_client)
+                        line_bot_api.reply_message(
+                            ReplyMessageRequest(
+                                replyToken=event.reply_token,
+                                messages=[
+                                    TextMessage(
+                                        text="抱歉，處理您的語音訊息時發生錯誤。請稍後再試。"
+                                    )
+                                ],
+                                notificationDisabled=False,
+                            )
+                        )
+                        logging.info("Successfully sent error message to user")
+                except Exception as reply_error:
+                    logging.error(f"Failed to send error message: {str(reply_error)}")
 
-            with ApiClient(self.config) as api_client:
-                line_bot_api = MessagingApi(api_client)
-                line_bot_api.reply_message(
-                    ReplyMessageRequest(
-                        replyToken=event.reply_token,
-                        messages=[
-                            TextMessage(text=f"{text}")
-                            # FlexSendMessage(
-                            #     alt_text=f"{text}",
-                            #     contents=FlexContainer.from_json(json.dumps(dt)),
-                            # )
-                        ],
-                        notificationDisabled=False,
-                    )
-                )
+                return error_message
 
         @self.handler.add(MessageEvent, message=LocationMessageContent)
         def handle_location_message(event: MessageEvent):
@@ -210,16 +287,130 @@ class Bot:
 
                 return results
 
-            def format_clinic_results(clinics):
-                result_texts = []
+            def create_clinic_bubbles(clinics):
+                bubbles = []
                 for clinic in clinics:
-                    map_link = (
-                        f"https://maps.google.com/?q={clinic['lat']},{clinic['lng']}"
-                    )
-                    result_texts.append(
-                        f"🏥 {clinic['name']}\n📍 {clinic['address']}\n🔗 {map_link}"
-                    )
-                return "\n\n".join(result_texts)
+                    map_link = f"https://maps.google.com/?q={clinic['lat']},{clinic['lng']}"
+                    bubble = {
+                        "type": "bubble",
+                        "size": "mega",
+                        "header": {
+                            "type": "box",
+                            "layout": "vertical",
+                            "contents": [
+                                {
+                                    "type": "box",
+                                    "layout": "vertical",
+                                    "contents": [
+                                        {
+                                            "type": "text",
+                                            "text": clinic["name"],
+                                            "weight": "bold",
+                                            "color": "#FFFFFF",
+                                            "size": "xl",
+                                            "wrap": True,
+                                            "margin": "md"
+                                        }
+                                    ],
+                                    "alignItems": "center"
+                                }
+                            ],
+                            "backgroundColor": "#27AE60",
+                            "paddingAll": "20px"
+                        },
+                        "body": {
+                            "type": "box",
+                            "layout": "vertical",
+                            "contents": [
+                                {
+                                    "type": "box",
+                                    "layout": "vertical",
+                                    "contents": [
+                                        {
+                                            "type": "box",
+                                            "layout": "horizontal",
+                                            "contents": [
+                                                {
+                                                    "type": "text",
+                                                    "text": "📍",
+                                                    "size": "sm",
+                                                    "flex": 0
+                                                },
+                                                {
+                                                    "type": "text",
+                                                    "text": "地址",
+                                                    "weight": "bold",
+                                                    "size": "sm",
+                                                    "color": "#AAAAAA",
+                                                    "flex": 0,
+                                                    "margin": "md"
+                                                }
+                                            ],
+                                            "alignItems": "center"
+                                        },
+                                        {
+                                            "type": "text",
+                                            "text": clinic["address"],
+                                            "size": "md",
+                                            "wrap": True,
+                                            "margin": "sm",
+                                            "color": "#666666"
+                                        }
+                                    ],
+                                    "spacing": "sm",
+                                    "paddingAll": "13px"
+                                },
+                                {
+                                    "type": "separator",
+                                    "margin": "xxl"
+                                },
+                                {
+                                    "type": "box",
+                                    "layout": "vertical",
+                                    "contents": [
+                                        {
+                                            "type": "text",
+                                            "text": "點擊下方按鈕查看地圖位置",
+                                            "color": "#AAAAAA",
+                                            "size": "sm",
+                                            "align": "center"
+                                        }
+                                    ],
+                                    "margin": "xxl"
+                                }
+                            ],
+                            "paddingAll": "20px"
+                        },
+                        "footer": {
+                            "type": "box",
+                            "layout": "vertical",
+                            "contents": [
+                                {
+                                    "type": "button",
+                                    "style": "primary",
+                                    "action": {
+                                        "type": "uri",
+                                        "label": "查看地圖",
+                                        "uri": map_link
+                                    },
+                                    "height": "sm",
+                                    "color": "#2ECC71"
+                                }
+                            ],
+                            "backgroundColor": "#F5F5F5",
+                            "paddingAll": "15px"
+                        },
+                        "styles": {
+                            "header": {
+                                "separator": False
+                            },
+                            "footer": {
+                                "separator": False
+                            }
+                        }
+                    }
+                    bubbles.append(bubble)
+                return bubbles
 
             latitude, longitude = event.message.latitude, event.message.longitude
             logging.info(f"Received: {latitude}, {longitude}")
@@ -229,18 +420,40 @@ class Bot:
 
                 if not clinics:
                     reply = "找不到附近的診所，建議您聯繫 1922 或前往大型醫院急診。"
-                else:
-                    reply = format_clinic_results(clinics)
-
-                with ApiClient(self.config) as api_client:
-                    line_bot_api = MessagingApi(api_client)
-                    line_bot_api.reply_message(
-                        ReplyMessageRequest(
-                            replyToken=event.reply_token,
-                            messages=[TextMessage(text=reply)],
-                            notificationDisabled=False,
+                    with ApiClient(self.config) as api_client:
+                        line_bot_api = MessagingApi(api_client)
+                        line_bot_api.reply_message(
+                            ReplyMessageRequest(
+                                replyToken=event.reply_token,
+                                messages=[TextMessage(text=reply)],
+                                notificationDisabled=False,
+                            )
                         )
-                    )
+                else:
+                    # Load template
+                    with open("template/clinic_reply.json", "r") as f:
+                        template = json.load(f)
+                    
+                    # Create clinic bubbles
+                    clinic_bubbles = create_clinic_bubbles(clinics)
+                    template["contents"] = clinic_bubbles
+
+                    # Send Flex Message
+                    with ApiClient(self.config) as api_client:
+                        line_bot_api = MessagingApi(api_client)
+                        line_bot_api.reply_message(
+                            ReplyMessageRequest(
+                                replyToken=event.reply_token,
+                                messages=[
+                                    FlexMessage(
+                                        alt_text="附近診所資訊",
+                                        contents=FlexContainer.from_json(json.dumps(template))
+                                    )
+                                ],
+                                notificationDisabled=False,
+                            )
+                        )
+
             except Exception as e:
                 logging.error(f"Error during clinic search: {e}")
                 with ApiClient(self.config) as api_client:

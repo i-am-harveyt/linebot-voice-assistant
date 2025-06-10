@@ -75,44 +75,358 @@ class Bot:
 
             try:
                 # 查詢 FAISS
-                context_chunks = self.ai.query_faiss(question)  # ← 取得向量最相近片段
-                paragraph = "\n\n".join(context_chunks)
-
                 context_chunks = self.ai.query_faiss(question)
-                logging.info(f"Retrieved {len(context_chunks)} chunks")
+                paragraph = "\n\n".join(context_chunks)
 
                 # Generate response using GPT
                 gpt_response = self.ai.generate_gpt_response(paragraph, question)
                 logging.info(f"Generated GPT response: {gpt_response}")
 
-                # Convert GPT response to Flex Message format
-                flex_message = convert_to_flex_message(gpt_response)
-                
-                if flex_message:
-                    # Send response using Flex Message
+                try:
+                    # Parse GPT response
+                    response_data = json.loads(gpt_response)
+                    logging.info(f"Parsed GPT response data: {response_data}")
+                    
+                    # Create Flex Message based on response type
+                    print(f"gpt_response: {gpt_response}")
+                    print(f"response_data: {response_data}")
+                    if response_data["type"] == "matched":
+                        print("[handle text message] type: matched")
+                        # Ensure text fields are not None or empty
+                        disease_text = str(response_data.get("disease", "無法確定可能的疾病")).strip()
+                        symptoms_list = response_data.get("symptoms", [])
+                        symptoms_text = "、".join(symptoms_list) if symptoms_list else "無法確定相關症狀"
+                        suggestions_list = response_data.get("suggestions", [])
+                        suggestions_text = "、".join(suggestions_list) if suggestions_list else "建議盡快就醫"
+                        
+                        # Get additional info
+                        additional_info = response_data.get("additional_info", {})
+                        incubation_period = additional_info.get("incubation_period", "未知")
+                        transmission = additional_info.get("transmission", "未知")
+                        prevention_list = additional_info.get("prevention", [])
+                        prevention_text = "、".join(prevention_list) if prevention_list else "未知"
+                        
+                        flex_message = {
+                            "type": "bubble",
+                            "header": {
+                                "type": "box",
+                                "layout": "vertical",
+                                "contents": [
+                                    {
+                                        "type": "text",
+                                        "text": "🔍 症狀分析結果",
+                                        "weight": "bold",
+                                        "color": "#FFFFFF",
+                                        "size": "xl"
+                                    }
+                                ],
+                                "backgroundColor": "#27AE60",
+                                "paddingAll": "20px"
+                            },
+                            "body": {
+                                "type": "box",
+                                "layout": "vertical",
+                                "contents": [
+                                    {
+                                        "type": "box",
+                                        "layout": "vertical",
+                                        "contents": [
+                                            {
+                                                "type": "text",
+                                                "text": "可能的疾病",
+                                                "weight": "bold",
+                                                "size": "md",
+                                                "color": "#666666"
+                                            },
+                                            {
+                                                "type": "text",
+                                                "text": disease_text,
+                                                "size": "md",
+                                                "wrap": True,
+                                                "margin": "sm",
+                                                "color": "#333333"
+                                            }
+                                        ],
+                                        "margin": "md"
+                                    },
+                                    {
+                                        "type": "separator",
+                                        "margin": "xxl"
+                                    },
+                                    {
+                                        "type": "box",
+                                        "layout": "vertical",
+                                        "contents": [
+                                            {
+                                                "type": "text",
+                                                "text": "相關症狀",
+                                                "weight": "bold",
+                                                "size": "md",
+                                                "color": "#666666"
+                                            },
+                                            {
+                                                "type": "text",
+                                                "text": symptoms_text,
+                                                "size": "md",
+                                                "wrap": True,
+                                                "margin": "sm",
+                                                "color": "#333333"
+                                            }
+                                        ],
+                                        "margin": "md"
+                                    },
+                                    {
+                                        "type": "separator",
+                                        "margin": "xxl"
+                                    },
+                                    {
+                                        "type": "box",
+                                        "layout": "vertical",
+                                        "contents": [
+                                            {
+                                                "type": "text",
+                                                "text": "建議事項",
+                                                "weight": "bold",
+                                                "size": "md",
+                                                "color": "#666666"
+                                            },
+                                            {
+                                                "type": "text",
+                                                "text": suggestions_text,
+                                                "size": "md",
+                                                "wrap": True,
+                                                "margin": "sm",
+                                                "color": "#333333"
+                                            }
+                                        ],
+                                        "margin": "md"
+                                    },
+                                    {
+                                        "type": "separator",
+                                        "margin": "xxl"
+                                    },
+                                    {
+                                        "type": "box",
+                                        "layout": "vertical",
+                                        "contents": [
+                                            {
+                                                "type": "text",
+                                                "text": "疾病資訊",
+                                                "weight": "bold",
+                                                "size": "md",
+                                                "color": "#666666"
+                                            },
+                                            {
+                                                "type": "box",
+                                                "layout": "vertical",
+                                                "contents": [
+                                                    {
+                                                        "type": "box",
+                                                        "layout": "horizontal",
+                                                        "contents": [
+                                                            {
+                                                                "type": "text",
+                                                                "text": "潛伏期",
+                                                                "size": "sm",
+                                                                "color": "#666666",
+                                                                "flex": 2
+                                                            },
+                                                            {
+                                                                "type": "text",
+                                                                "text": incubation_period,
+                                                                "size": "sm",
+                                                                "color": "#333333",
+                                                                "flex": 3,
+                                                                "wrap": True
+                                                            }
+                                                        ],
+                                                        "margin": "sm"
+                                                    },
+                                                    {
+                                                        "type": "box",
+                                                        "layout": "horizontal",
+                                                        "contents": [
+                                                            {
+                                                                "type": "text",
+                                                                "text": "傳播方式",
+                                                                "size": "sm",
+                                                                "color": "#666666",
+                                                                "flex": 2
+                                                            },
+                                                            {
+                                                                "type": "text",
+                                                                "text": transmission,
+                                                                "size": "sm",
+                                                                "color": "#333333",
+                                                                "flex": 3,
+                                                                "wrap": True
+                                                            }
+                                                        ],
+                                                        "margin": "sm"
+                                                    },
+                                                    {
+                                                        "type": "box",
+                                                        "layout": "horizontal",
+                                                        "contents": [
+                                                            {
+                                                                "type": "text",
+                                                                "text": "預防措施",
+                                                                "size": "sm",
+                                                                "color": "#666666",
+                                                                "flex": 2
+                                                            },
+                                                            {
+                                                                "type": "text",
+                                                                "text": prevention_text,
+                                                                "size": "sm",
+                                                                "color": "#333333",
+                                                                "flex": 3,
+                                                                "wrap": True
+                                                            }
+                                                        ],
+                                                        "margin": "sm"
+                                                    }
+                                                ],
+                                                "margin": "sm"
+                                            }
+                                        ],
+                                        "margin": "md"
+                                    }
+                                ],
+                                "paddingAll": "20px"
+                            },
+                            "footer": {
+                                "type": "box",
+                                "layout": "vertical",
+                                "contents": [
+                                    {
+                                        "type": "text",
+                                        "text": "⚠️ 請注意：這只是初步分析",
+                                        "color": "#FFFFFF",
+                                        "align": "center",
+                                        "size": "sm"
+                                    }
+                                ],
+                                "backgroundColor": "#E74C3C",
+                                "paddingAll": "15px"
+                            }
+                        }
+                    elif response_data["type"] == "unmatched":
+                        print("[handle text message] type: unmatched")
+                        message_text = str(response_data.get("message", "需要更多資訊來協助您")).strip()
+                        
+                        if not message_text:
+                            message_text = "需要更多資訊來協助您"
+                        
+                        flex_message = {
+                            "type": "bubble",
+                            "header": {
+                                "type": "box",
+                                "layout": "vertical",
+                                "contents": [
+                                    {
+                                        "type": "text",
+                                        "text": "❓ 需要更多資訊",
+                                        "weight": "bold",
+                                        "color": "#FFFFFF",
+                                        "size": "xl"
+                                    }
+                                ],
+                                "backgroundColor": "#F39C12",
+                                "paddingAll": "20px"
+                            },
+                            "body": {
+                                "type": "box",
+                                "layout": "vertical",
+                                "contents": [
+                                    {
+                                        "type": "text",
+                                        "text": message_text,
+                                        "size": "md",
+                                        "wrap": True,
+                                        "color": "#333333"
+                                    }
+                                ],
+                                "paddingAll": "20px"
+                            },
+                            "footer": {
+                                "type": "box",
+                                "layout": "vertical",
+                                "contents": [
+                                    {
+                                        "type": "text",
+                                        "text": "請提供更多症狀描述",
+                                        "color": "#FFFFFF",
+                                        "align": "center",
+                                        "size": "sm"
+                                    }
+                                ],
+                                "backgroundColor": "#F39C12",
+                                "paddingAll": "15px"
+                            }
+                        }
+                    else:  # unrelated
+                        print("[handle text message] type: unrelated")
+                        message_text = str(response_data.get("message", "抱歉，我無法理解您的問題")).strip()
+                        
+                        if not message_text:
+                            message_text = "抱歉，我無法理解您的問題"
+                        
+                        flex_message = {
+                            "type": "bubble",
+                            "header": {
+                                "type": "box",
+                                "layout": "vertical",
+                                "contents": [
+                                    {
+                                        "type": "text",
+                                        "text": "💬 一般對話",
+                                        "weight": "bold",
+                                        "color": "#FFFFFF",
+                                        "size": "xl"
+                                    }
+                                ],
+                                "backgroundColor": "#3498DB",
+                                "paddingAll": "20px"
+                            },
+                            "body": {
+                                "type": "box",
+                                "layout": "vertical",
+                                "contents": [
+                                    {
+                                        "type": "text",
+                                        "text": message_text,
+                                        "size": "md",
+                                        "wrap": True,
+                                        "color": "#333333"
+                                    }
+                                ],
+                                "paddingAll": "20px"
+                            }
+                        }
+
+                    logging.info(f"Created Flex Message: {json.dumps(flex_message, ensure_ascii=False)}")
+
+                    # Send Flex Message
                     with ApiClient(self.config) as api_client:
                         line_bot_api = MessagingApi(api_client)
-                        try:
-                            response = line_bot_api.reply_message(
-                                ReplyMessageRequest(
-                                    replyToken=event.reply_token,
-                                    messages=[
-                                        FlexMessage(
-                                            alt_text=gpt_response,
-                                            contents=FlexContainer.from_json(json.dumps(flex_message))
-                                        )
-                                    ],
-                                    notificationDisabled=False,
-                                )
+                        response = line_bot_api.reply_message(
+                            ReplyMessageRequest(
+                                replyToken=event.reply_token,
+                                messages=[
+                                    FlexMessage(
+                                        alt_text="醫療諮詢回覆",
+                                        contents=FlexContainer.from_json(json.dumps(flex_message))
+                                    )
+                                ],
+                                notificationDisabled=False,
                             )
-                            logging.info(f"Line API response: {response}")
-                        except Exception as api_error:
-                            logging.error(
-                                f"Error sending message to Line API: {str(api_error)}"
-                            )
-                            raise
-                else:
-                    # Fallback to text message if conversion fails
+                        )
+                        logging.info(f"Line API response: {response}")
+
+                except json.JSONDecodeError as e:
+                    logging.error(f"Failed to parse GPT response as JSON: {e}")
+                    # If response is not valid JSON, send as text message
                     with ApiClient(self.config) as api_client:
                         line_bot_api = MessagingApi(api_client)
                         response = line_bot_api.reply_message(
@@ -191,34 +505,348 @@ class Bot:
                 gpt_response = self.ai.generate_gpt_response(paragraph, text)
                 logging.info(f"Generated GPT response: {gpt_response}")
 
-                # Convert GPT response to Flex Message format
-                flex_message = convert_to_flex_message(gpt_response)
-                
-                if flex_message:
-                    # Send response using Flex Message
+                try:
+                    # Parse GPT response
+                    response_data = json.loads(gpt_response)
+                    
+                    # Create Flex Message based on response type
+                    if response_data["type"] == "matched":
+                        print("[handle audio message] type: matched")
+                        # Ensure text fields are not None or empty
+                        disease_text = str(response_data.get("disease", "無法確定可能的疾病")).strip()
+                        symptoms_list = response_data.get("symptoms", [])
+                        symptoms_text = "、".join(str(s) for s in symptoms_list) if symptoms_list else "無法確定相關症狀"
+                        suggestions_list = response_data.get("suggestions", [])
+                        suggestions_text = "、".join(str(s) for s in suggestions_list) if suggestions_list else "建議盡快就醫"
+                        
+                        # Get additional info
+                        additional_info = response_data.get("additional_info", {})
+                        incubation_period = str(additional_info.get("incubation_period", "未知")).strip()
+                        transmission = str(additional_info.get("transmission", "未知")).strip()
+                        prevention_list = additional_info.get("prevention", [])
+                        prevention_text = "、".join(str(p) for p in prevention_list) if prevention_list else "未知"
+                        
+                        flex_message = {
+                            "type": "bubble",
+                            "header": {
+                                "type": "box",
+                                "layout": "vertical",
+                                "contents": [
+                                    {
+                                        "type": "text",
+                                        "text": "🔍 症狀分析結果",
+                                        "weight": "bold",
+                                        "color": "#FFFFFF",
+                                        "size": "xl"
+                                    }
+                                ],
+                                "backgroundColor": "#27AE60",
+                                "paddingAll": "20px"
+                            },
+                            "body": {
+                                "type": "box",
+                                "layout": "vertical",
+                                "contents": [
+                                    {
+                                        "type": "box",
+                                        "layout": "vertical",
+                                        "contents": [
+                                            {
+                                                "type": "text",
+                                                "text": "可能的疾病",
+                                                "weight": "bold",
+                                                "size": "md",
+                                                "color": "#666666"
+                                            },
+                                            {
+                                                "type": "text",
+                                                "text": disease_text,
+                                                "size": "md",
+                                                "wrap": True,
+                                                "margin": "sm",
+                                                "color": "#333333"
+                                            }
+                                        ],
+                                        "margin": "md"
+                                    },
+                                    {
+                                        "type": "separator",
+                                        "margin": "xxl"
+                                    },
+                                    {
+                                        "type": "box",
+                                        "layout": "vertical",
+                                        "contents": [
+                                            {
+                                                "type": "text",
+                                                "text": "相關症狀",
+                                                "weight": "bold",
+                                                "size": "md",
+                                                "color": "#666666"
+                                            },
+                                            {
+                                                "type": "text",
+                                                "text": symptoms_text,
+                                                "size": "md",
+                                                "wrap": True,
+                                                "margin": "sm",
+                                                "color": "#333333"
+                                            }
+                                        ],
+                                        "margin": "md"
+                                    },
+                                    {
+                                        "type": "separator",
+                                        "margin": "xxl"
+                                    },
+                                    {
+                                        "type": "box",
+                                        "layout": "vertical",
+                                        "contents": [
+                                            {
+                                                "type": "text",
+                                                "text": "建議事項",
+                                                "weight": "bold",
+                                                "size": "md",
+                                                "color": "#666666"
+                                            },
+                                            {
+                                                "type": "text",
+                                                "text": suggestions_text,
+                                                "size": "md",
+                                                "wrap": True,
+                                                "margin": "sm",
+                                                "color": "#333333"
+                                            }
+                                        ],
+                                        "margin": "md"
+                                    },
+                                    {
+                                        "type": "separator",
+                                        "margin": "xxl"
+                                    },
+                                    {
+                                        "type": "box",
+                                        "layout": "vertical",
+                                        "contents": [
+                                            {
+                                                "type": "text",
+                                                "text": "疾病資訊",
+                                                "weight": "bold",
+                                                "size": "md",
+                                                "color": "#666666"
+                                            },
+                                            {
+                                                "type": "box",
+                                                "layout": "vertical",
+                                                "contents": [
+                                                    {
+                                                        "type": "box",
+                                                        "layout": "horizontal",
+                                                        "contents": [
+                                                            {
+                                                                "type": "text",
+                                                                "text": "潛伏期",
+                                                                "size": "sm",
+                                                                "color": "#666666",
+                                                                "flex": 2
+                                                            },
+                                                            {
+                                                                "type": "text",
+                                                                "text": incubation_period,
+                                                                "size": "sm",
+                                                                "color": "#333333",
+                                                                "flex": 3,
+                                                                "wrap": True
+                                                            }
+                                                        ],
+                                                        "margin": "sm"
+                                                    },
+                                                    {
+                                                        "type": "box",
+                                                        "layout": "horizontal",
+                                                        "contents": [
+                                                            {
+                                                                "type": "text",
+                                                                "text": "傳播方式",
+                                                                "size": "sm",
+                                                                "color": "#666666",
+                                                                "flex": 2
+                                                            },
+                                                            {
+                                                                "type": "text",
+                                                                "text": transmission,
+                                                                "size": "sm",
+                                                                "color": "#333333",
+                                                                "flex": 3,
+                                                                "wrap": True
+                                                            }
+                                                        ],
+                                                        "margin": "sm"
+                                                    },
+                                                    {
+                                                        "type": "box",
+                                                        "layout": "horizontal",
+                                                        "contents": [
+                                                            {
+                                                                "type": "text",
+                                                                "text": "預防措施",
+                                                                "size": "sm",
+                                                                "color": "#666666",
+                                                                "flex": 2
+                                                            },
+                                                            {
+                                                                "type": "text",
+                                                                "text": prevention_text,
+                                                                "size": "sm",
+                                                                "color": "#333333",
+                                                                "flex": 3,
+                                                                "wrap": True
+                                                            }
+                                                        ],
+                                                        "margin": "sm"
+                                                    }
+                                                ],
+                                                "margin": "sm"
+                                            }
+                                        ],
+                                        "margin": "md"
+                                    }
+                                ],
+                                "paddingAll": "20px"
+                            },
+                            "footer": {
+                                "type": "box",
+                                "layout": "vertical",
+                                "contents": [
+                                    {
+                                        "type": "text",
+                                        "text": "⚠️ 請注意：這只是初步分析",
+                                        "color": "#FFFFFF",
+                                        "align": "center",
+                                        "size": "sm"
+                                    }
+                                ],
+                                "backgroundColor": "#E74C3C",
+                                "paddingAll": "15px"
+                            }
+                        }
+                    elif response_data["type"] == "unmatched":
+                        print("[handle audio message] type: unmatched")
+                        message_text = str(response_data.get("message", "需要更多資訊來協助您")).strip()
+                        
+                        if not message_text:
+                            message_text = "需要更多資訊來協助您"
+                        
+                        flex_message = {
+                            "type": "bubble",
+                            "header": {
+                                "type": "box",
+                                "layout": "vertical",
+                                "contents": [
+                                    {
+                                        "type": "text",
+                                        "text": "❓ 需要更多資訊",
+                                        "weight": "bold",
+                                        "color": "#FFFFFF",
+                                        "size": "xl"
+                                    }
+                                ],
+                                "backgroundColor": "#F39C12",
+                                "paddingAll": "20px"
+                            },
+                            "body": {
+                                "type": "box",
+                                "layout": "vertical",
+                                "contents": [
+                                    {
+                                        "type": "text",
+                                        "text": message_text,
+                                        "size": "md",
+                                        "wrap": True,
+                                        "color": "#333333"
+                                    }
+                                ],
+                                "paddingAll": "20px"
+                            },
+                            "footer": {
+                                "type": "box",
+                                "layout": "vertical",
+                                "contents": [
+                                    {
+                                        "type": "text",
+                                        "text": "請提供更多症狀描述",
+                                        "color": "#FFFFFF",
+                                        "align": "center",
+                                        "size": "sm"
+                                    }
+                                ],
+                                "backgroundColor": "#F39C12",
+                                "paddingAll": "15px"
+                            }
+                        }
+                    else:  # unrelated
+                        print("[handle audio message] type: unrelated")
+                        message_text = str(response_data.get("message", "抱歉，我無法理解您的問題")).strip()
+                        
+                        if not message_text:
+                            message_text = "抱歉，我無法理解您的問題"
+                        
+                        flex_message = {
+                            "type": "bubble",
+                            "header": {
+                                "type": "box",
+                                "layout": "vertical",
+                                "contents": [
+                                    {
+                                        "type": "text",
+                                        "text": "💬 一般對話",
+                                        "weight": "bold",
+                                        "color": "#FFFFFF",
+                                        "size": "xl"
+                                    }
+                                ],
+                                "backgroundColor": "#3498DB",
+                                "paddingAll": "20px"
+                            },
+                            "body": {
+                                "type": "box",
+                                "layout": "vertical",
+                                "contents": [
+                                    {
+                                        "type": "text",
+                                        "text": message_text,
+                                        "size": "md",
+                                        "wrap": True,
+                                        "color": "#333333"
+                                    }
+                                ],
+                                "paddingAll": "20px"
+                            }
+                        }
+
+                    logging.info(f"Created Flex Message: {json.dumps(flex_message, ensure_ascii=False)}")
+
+                    # Send Flex Message
                     with ApiClient(self.config) as api_client:
                         line_bot_api = MessagingApi(api_client)
-                        try:
-                            response = line_bot_api.reply_message(
-                                ReplyMessageRequest(
-                                    replyToken=event.reply_token,
-                                    messages=[
-                                        FlexMessage(
-                                            alt_text=gpt_response,
-                                            contents=FlexContainer.from_json(json.dumps(flex_message))
-                                        )
-                                    ],
-                                    notificationDisabled=False,
-                                )
+                        response = line_bot_api.reply_message(
+                            ReplyMessageRequest(
+                                replyToken=event.reply_token,
+                                messages=[
+                                    FlexMessage(
+                                        alt_text="醫療諮詢回覆",
+                                        contents=FlexContainer.from_json(json.dumps(flex_message))
+                                    )
+                                ],
+                                notificationDisabled=False,
                             )
-                            logging.info(f"Line API response: {response}")
-                        except Exception as api_error:
-                            logging.error(
-                                f"Error sending message to Line API: {str(api_error)}"
-                            )
-                            raise
-                else:
-                    # Fallback to text message if conversion fails
+                        )
+                        logging.info(f"Line API response: {response}")
+
+                except json.JSONDecodeError as e:
+                    logging.error(f"Failed to parse GPT response as JSON: {e}")
+                    # If response is not valid JSON, send as text message
                     with ApiClient(self.config) as api_client:
                         line_bot_api = MessagingApi(api_client)
                         response = line_bot_api.reply_message(
@@ -302,6 +930,11 @@ class Bot:
                                     "type": "box",
                                     "layout": "vertical",
                                     "contents": [
+                                        {
+                                            "type": "text",
+                                            "text": "🏥",
+                                            "size": "xl"
+                                        },
                                         {
                                             "type": "text",
                                             "text": clinic["name"],
@@ -390,7 +1023,7 @@ class Bot:
                                     "style": "primary",
                                     "action": {
                                         "type": "uri",
-                                        "label": "查看地圖",
+                                        "label": "🗺️ 查看地圖",
                                         "uri": map_link
                                     },
                                     "height": "sm",
